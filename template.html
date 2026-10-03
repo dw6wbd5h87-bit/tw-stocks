@@ -37,6 +37,8 @@ tr+tr td{border-top:1px solid var(--bd)}
 .badge.b2{background:#64748b}.badge.b3{background:#b45309}
 .fl{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;padding:6px 14px;font-size:13px;border-bottom:1px solid var(--bd)}
 .meter{flex:1;min-width:120px;height:6px;background:var(--bd);border-radius:3px;overflow:hidden}.meter i{display:block;height:100%;background:var(--gold)}
+.hit td{background:rgba(59,130,246,.25)!important;font-weight:700}
+.bar input[type=search]{flex:1;min-width:200px}
 </style>
 </head>
 <body>
@@ -56,6 +58,7 @@ tr+tr td{border-top:1px solid var(--bd)}
 </details>
 
 <div class="bar">
+<input type="search" id="q" placeholder="搜尋個股代號或名稱,例如 2330 或 台積">
 <select id="ss">
 <option value="flow">族群排序:資金占比</option>
 <option value="chg">族群排序:平均漲幅</option>
@@ -109,14 +112,19 @@ function render(){
     return{s,a,tot,avg,tv,share,tvChg,shChg};
   });
   const m=$("ss").value;
+  const kw=$("q").value.trim().toLowerCase();
+  const hit=r=>kw&&(r.code+" "+r.name).toLowerCase().includes(kw);
   secs.sort((x,y)=>m=="flow"?y.tv-x.tv:m=="chg"?y.avg-x.avg:m=="cap"?y.tot-x.tot:x.s.localeCompare(y.s,"zh-Hant"));
+  secs.forEach((x,k)=>x.rank=k+1);
   const mx=Math.max(...secs.map(x=>x.share),0.0001);
-  $("flowinfo").textContent=totalTv?"全市場上市個股成交金額 "+fmtC(totalTv)+(FL&&FL.prevDate?"・資金增減與 "+FL.prevDate+" 比較":"・尚無前一交易日資料,資金增減將從下一個交易日開始顯示"):"";
-  $("out").innerHTML=secs.map(({s,a,tot,avg,tv,share,tvChg,shChg},k)=>{
-    const body=a.map((r,i)=>`<tr class="${["boss","boss2","boss3"][i]||""}"><td>${i+1}</td><td>${esc(r.code)}</td><td>${esc(r.name)}${i<3?`<span class="badge b${i+1}">${["大哥","二哥","三哥"][i]}</span>`:""}</td><td>${fmtC(r.cap)}</td><td>${r.tv?fmtC(r.tv):"-"}</td><td class="${cls(r.chg)}">${fmtP(r.chg)}</td></tr>`).join("");
+  const view=kw?secs.filter(x=>x.a.some(hit)):secs;
+  const nHit=kw?view.reduce((p,x)=>p+x.a.filter(hit).length,0):0;
+  $("flowinfo").textContent=(kw?"搜尋「"+$("q").value.trim()+"」:找到 "+nHit+" 檔個股,位於 "+view.length+" 個族群。":"")+(totalTv?"全市場上市個股成交金額 "+fmtC(totalTv)+(FL&&FL.prevDate?"・資金增減與 "+FL.prevDate+" 比較":"・尚無前一交易日資料,資金增減將從下一個交易日開始顯示"):"");
+  $("out").innerHTML=view.map(({s,a,tot,avg,tv,share,tvChg,shChg,rank})=>{
+    const body=a.map((r,i)=>`<tr class="${(["boss","boss2","boss3"][i]||"")+(hit(r)?" hit":"")}"><td>${i+1}</td><td>${esc(r.code)}</td><td>${esc(r.name)}${i<3?`<span class="badge b${i+1}">${["大哥","二哥","三哥"][i]}</span>`:""}</td><td>${fmtC(r.cap)}</td><td>${r.tv?fmtC(r.tv):"-"}</td><td class="${cls(r.chg)}">${fmtP(r.chg)}</td></tr>`).join("");
     const fl=tvChg===null?'<span class="sub">資金增減:無前一日資料</span>':`<span class="${cls(tvChg)}">${tvChg>=0?"▲ 資金增加":"▼ 資金減少"} ${fmtP(tvChg)}</span><span class="sub">占比 ${shChg>=0?"+":""}${shChg.toFixed(2)}pp</span>`;
-    return`<section class="sec"><div class="sh"><span>#${k+1} ${esc(s)} <span class="sub">${a.length} 檔・市值 ${fmtC(tot)}</span></span><span class="${cls(avg)}">平均 ${fmtP(avg)}</span></div><div class="fl"><span>資金占比 <b>${share.toFixed(2)}%</b></span><span class="meter"><i style="width:${share/mx*100}%"></i></span><span>成交 ${fmtC(tv)}</span>${fl}</div><div class="scroll"><table><tr><th>排名</th><th>代號</th><th>名稱</th><th>市值</th><th>成交金額</th><th>漲跌幅</th></tr>${body}</table></div></section>`;
-  }).join("")||'<div class="empty">沒有資料</div>';
+    return`<section class="sec"><div class="sh"><span>#${rank} ${esc(s)} <span class="sub">${a.length} 檔・市值 ${fmtC(tot)}</span></span><span class="${cls(avg)}">平均 ${fmtP(avg)}</span></div><div class="fl"><span>資金占比 <b>${share.toFixed(2)}%</b></span><span class="meter"><i style="width:${share/mx*100}%"></i></span><span>成交 ${fmtC(tv)}</span>${fl}</div><div class="scroll"><table><tr><th>排名</th><th>代號</th><th>名稱</th><th>市值</th><th>成交金額</th><th>漲跌幅</th></tr>${body}</table></div></section>`;
+  }).join("")||'<div class="empty">'+(kw?'找不到符合的個股':'沒有資料')+'</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 $("go").onclick=()=>load($("ta").value,"貼上資料");
@@ -126,7 +134,7 @@ $("demo").onclick=()=>load(`甲001,示意A公司,示意族群一,5000,1.2
 甲003,示意C公司,示意族群一,300,2.5
 乙001,示意D公司,示意族群二,800,-1.1
 乙002,示意E公司,示意族群二,2600,0.4`,"示意資料(虛構,非真實行情)");
-$("ss").onchange=render;
+$("ss").onchange=render;$("q").oninput=render;
 
 try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.d){DATA=s.d;$("meta").textContent=`${s.label}・上次載入 ${s.t}・共 ${s.d.length} 檔`;$("imp").open=false;render()}}catch(e){}
 
