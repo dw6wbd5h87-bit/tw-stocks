@@ -24,7 +24,7 @@ summary{cursor:pointer;font-weight:600}
 .sec{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin:12px 0;overflow:hidden}
 .sh{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--bd);font-weight:600}
 .scroll{overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:420px}
+table{width:100%;border-collapse:collapse;min-width:520px}
 th,td{padding:7px 14px;text-align:right;white-space:nowrap}
 th{font-size:12px;color:var(--mut);font-weight:500}
 th:nth-child(-n+3),td:nth-child(-n+3){text-align:left}
@@ -35,6 +35,8 @@ tr+tr td{border-top:1px solid var(--bd)}
 .empty{text-align:center;color:var(--mut);padding:40px 10px}
 .boss2 td{background:rgba(148,163,184,.18)}.boss3 td{background:rgba(217,119,6,.14)}
 .badge.b2{background:#64748b}.badge.b3{background:#b45309}
+.fl{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;padding:6px 14px;font-size:13px;border-bottom:1px solid var(--bd)}
+.meter{flex:1;min-width:120px;height:6px;background:var(--bd);border-radius:3px;overflow:hidden}.meter i{display:block;height:100%;background:var(--gold)}
 </style>
 </head>
 <body>
@@ -55,11 +57,13 @@ tr+tr td{border-top:1px solid var(--bd)}
 
 <div class="bar">
 <select id="ss">
+<option value="flow">族群排序:資金占比</option>
 <option value="chg">族群排序:平均漲幅</option>
 <option value="cap">族群排序:總市值</option>
 <option value="name">族群排序:名稱</option>
 </select>
 </div>
+<div class="sub" id="flowinfo" style="margin-bottom:6px"></div>
 <div id="out"><div class="empty">請先匯入資料</div></div>
 </main>
 <script>
@@ -74,7 +78,7 @@ function parseCSV(t){
     for(const ch of l){if(ch=='"')q=!q;else if(ch==","&&!q){c.push(cur.trim());cur=""}else cur+=ch}
     c.push(cur.trim());rows.push(c);
   });
-  return rows.map(r=>({code:r[0],name:r[1],sector:r[2],cap:parseFloat((r[3]||"").replace(/,/g,"")),chg:parseFloat((r[4]||"").replace(/[,%+]/g,""))}))
+  return rows.map(r=>({code:r[0],name:r[1],sector:r[2],cap:parseFloat((r[3]||"").replace(/,/g,"")),chg:parseFloat((r[4]||"").replace(/[,%+]/g,"")),tv:parseFloat((r[5]||"").replace(/,/g,""))||0}))
     .filter(r=>r.code&&r.sector&&isFinite(r.cap)&&isFinite(r.chg));
 }
 function load(text,label){
@@ -91,21 +95,28 @@ const fmtP=v=>(v>0?"+":"")+v.toFixed(2)+"%";
 function render(){
   const g={};
   DATA.forEach(r=>(g[r.sector]??=[]).push(r));
+  const FL=(typeof EMBED!=="undefined"&&EMBED.flow)||null;
+  const totalTv=DATA.reduce((p,c)=>p+(c.tv||0),0);
   let secs=Object.entries(g).map(([s,a])=>{
     a.sort((x,y)=>y.cap-x.cap);
     const tot=a.reduce((p,c)=>p+c.cap,0);
     const avg=a.reduce((p,c)=>p+c.chg,0)/a.length;
-    return{s,a,tot,avg};
+    const tv=a.reduce((p,c)=>p+(c.tv||0),0);
+    const share=totalTv?tv/totalTv*100:0;
+    const pv=FL&&FL.s&&FL.s[s];
+    const tvChg=pv&&pv[0]>0?(tv/pv[0]-1)*100:null;
+    const shChg=pv?share-pv[1]:null;
+    return{s,a,tot,avg,tv,share,tvChg,shChg};
   });
   const m=$("ss").value;
-  secs.sort((x,y)=>m=="chg"?y.avg-x.avg:m=="cap"?y.tot-x.tot:x.s.localeCompare(y.s,"zh-Hant"));
-  const h=secs.map(({s,a,tot,avg})=>{
-    const rows=a.map((r,i)=>({r,i}));
-    if(!rows.length)return"";
-    const body=rows.map(({r,i})=>`<tr class="${["boss","boss2","boss3"][i]||""}"><td>${i+1}</td><td>${esc(r.code)}</td><td>${esc(r.name)}${i<3?`<span class="badge b${i+1}">${["大哥","二哥","三哥"][i]}</span>`:""}</td><td>${fmtC(r.cap)}</td><td class="${cls(r.chg)}">${fmtP(r.chg)}</td></tr>`).join("");
-    return`<section class="sec"><div class="sh"><span>${esc(s)} <span class="sub">${a.length} 檔・${fmtC(tot)}</span></span><span class="${cls(avg)}">平均 ${fmtP(avg)}</span></div><div class="scroll"><table><tr><th>排名</th><th>代號</th><th>名稱</th><th>市值</th><th>漲跌幅</th></tr>${body}</table></div></section>`;
-  }).join("");
-  $("out").innerHTML=h||'<div class="empty">沒有符合的資料</div>';
+  secs.sort((x,y)=>m=="flow"?y.tv-x.tv:m=="chg"?y.avg-x.avg:m=="cap"?y.tot-x.tot:x.s.localeCompare(y.s,"zh-Hant"));
+  const mx=Math.max(...secs.map(x=>x.share),0.0001);
+  $("flowinfo").textContent=totalTv?"全市場上市個股成交金額 "+fmtC(totalTv)+(FL&&FL.prevDate?"・資金增減與 "+FL.prevDate+" 比較":"・尚無前一交易日資料,資金增減將從下一個交易日開始顯示"):"";
+  $("out").innerHTML=secs.map(({s,a,tot,avg,tv,share,tvChg,shChg},k)=>{
+    const body=a.map((r,i)=>`<tr class="${["boss","boss2","boss3"][i]||""}"><td>${i+1}</td><td>${esc(r.code)}</td><td>${esc(r.name)}${i<3?`<span class="badge b${i+1}">${["大哥","二哥","三哥"][i]}</span>`:""}</td><td>${fmtC(r.cap)}</td><td>${r.tv?fmtC(r.tv):"-"}</td><td class="${cls(r.chg)}">${fmtP(r.chg)}</td></tr>`).join("");
+    const fl=tvChg===null?'<span class="sub">資金增減:無前一日資料</span>':`<span class="${cls(tvChg)}">${tvChg>=0?"▲ 資金增加":"▼ 資金減少"} ${fmtP(tvChg)}</span><span class="sub">占比 ${shChg>=0?"+":""}${shChg.toFixed(2)}pp</span>`;
+    return`<section class="sec"><div class="sh"><span>#${k+1} ${esc(s)} <span class="sub">${a.length} 檔・市值 ${fmtC(tot)}</span></span><span class="${cls(avg)}">平均 ${fmtP(avg)}</span></div><div class="fl"><span>資金占比 <b>${share.toFixed(2)}%</b></span><span class="meter"><i style="width:${share/mx*100}%"></i></span><span>成交 ${fmtC(tv)}</span>${fl}</div><div class="scroll"><table><tr><th>排名</th><th>代號</th><th>名稱</th><th>市值</th><th>成交金額</th><th>漲跌幅</th></tr>${body}</table></div></section>`;
+  }).join("")||'<div class="empty">沒有資料</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 $("go").onclick=()=>load($("ta").value,"貼上資料");

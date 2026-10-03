@@ -51,7 +51,7 @@ def main():
             continue
         code = str(c["公司代號"])
         ind = IND.get(str(c.get("產業別")).zfill(2), str(c.get("產業別")))
-        rows.append([code, c.get("公司簡稱", ""), ind, round(sh * close / 1e8, 1), round(chg / (close - chg) * 100, 2)])
+        rows.append([code, c.get("公司簡稱", ""), ind, round(sh * close / 1e8, 1), round(chg / (close - chg) * 100, 2), round((num(p.get("TradeValue")) or 0) / 1e8, 2)])
     if not rows:
         print("沒有產生任何資料。證交所欄位可能有變,以下是各資料集第一筆的欄位供除錯:")
         print("STOCK_DAY_ALL:", list(prices[0].keys()) if prices else "空")
@@ -69,8 +69,27 @@ def main():
         date = f"{int(d[:-4]) + 1911}-{d[-4:-2]}-{d[-2:]}"
     except ValueError:
         date = datetime.date.today().isoformat()
+    # 資金流向:各族群成交金額(億),與歷史紀錄中前一個交易日比較
+    tv = {}
+    for r in rows:
+        tv[r[2]] = tv.get(r[2], 0) + r[5]
+    hist_p = HERE / "history.json"
+    try:
+        hist = json.loads(hist_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        hist = {}
+    prev = sorted(k for k in hist if k < date)
+    flow = None
+    if prev:
+        pd = prev[-1]
+        ptot = sum(hist[pd].values()) or 1
+        flow = {"prevDate": pd, "s": {s: [v, round(v / ptot * 100, 3)] for s, v in hist[pd].items()}}
+    hist[date] = {s: round(v, 2) for s, v in tv.items()}
+    for k in sorted(hist)[:-60]:
+        del hist[k]
+    hist_p.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
     tpl = (HERE / "template.html").read_text(encoding="utf-8")
-    emb = "const EMBED=" + json.dumps({"csv": buf.getvalue(), "date": date}, ensure_ascii=False).replace("</", "<\\/") + ";"
+    emb = "const EMBED=" + json.dumps({"csv": buf.getvalue(), "date": date, "flow": flow}, ensure_ascii=False).replace("</", "<\\/") + ";"
     out = HERE / "index.html"
     out.write_text(tpl.replace("/*EMBED*/", emb, 1), encoding="utf-8")
     print(f"完成:{len(rows)} 檔,{len({r[2] for r in rows})} 個族群,資料日期 {date} → {out}")
