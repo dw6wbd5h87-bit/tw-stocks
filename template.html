@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>台股族群大哥榜</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#6b7280;--bd:#e5e7eb;--up:#d92d20;--dn:#039855;--gold:#b7791f;--goldbg:#fef3c7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1216;--card:#181c22;--tx:#e8eaed;--mut:#9aa3af;--bd:#2a2f37;--up:#ff6b5e;--dn:#34d399;--gold:#fbbf24;--goldbg:#3a2f0b}}
+:root[data-theme="dark"]{--bg:#0f1216;--card:#181c22;--tx:#e8eaed;--mut:#9aa3af;--bd:#2a2f37;--up:#ff6b5e;--dn:#34d399;--gold:#fbbf24;--goldbg:#3a2f0b}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0}
+.sub{color:var(--mut);font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.bar input[type=search],.bar select{padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit}
+.bar input[type=search]{flex:1;min-width:160px}
+button,.btn{padding:8px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit;cursor:pointer}
+textarea{width:100%;height:90px;box-sizing:border-box;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);padding:8px;font:12px monospace}
+details{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+summary{cursor:pointer;font-weight:600}
+.sec{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin:12px 0;overflow:hidden}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--bd);font-weight:600}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:420px}
+th,td{padding:7px 14px;text-align:right;white-space:nowrap}
+th{font-size:12px;color:var(--mut);font-weight:500}
+th:nth-child(-n+3),td:nth-child(-n+3){text-align:left}
+tr+tr td{border-top:1px solid var(--bd)}
+.boss td{background:var(--goldbg)}
+.badge{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--gold);color:#fff;font-size:12px}
+.up{color:var(--up)}.dn{color:var(--dn)}
+.empty{text-align:center;color:var(--mut);padding:40px 10px}
+</style>
+</head>
+<body>
+<main>
+<h1>👑 台股族群大哥榜</h1>
+<div class="sub" id="meta">尚未載入資料</div>
+
+<details id="imp">
+<summary>匯入今日資料</summary>
+<p class="sub">格式(CSV):代號,名稱,族群,市值(億),漲跌幅(%)。資料由 build.py 每天自動產生;也可在此手動上傳或貼上。</p>
+<textarea id="ta" placeholder="2330,台積電,半導體,150000,1.25"></textarea>
+<div class="bar" style="margin-bottom:0">
+<button id="go">載入貼上的資料</button>
+<label class="btn">上傳 CSV<input id="file" type="file" accept=".csv,.txt" hidden></label>
+<button id="demo">示意資料(虛構)</button>
+</div>
+</details>
+
+<div class="bar">
+<select id="ss">
+<option value="chg">族群排序:平均漲幅</option>
+<option value="cap">族群排序:總市值</option>
+<option value="name">族群排序:名稱</option>
+</select>
+</div>
+<div id="out"><div class="empty">請先匯入資料</div></div>
+</main>
+<script>
+/*EMBED*/
+const KEY="tw_leaders_v1";let DATA=[];
+const $=id=>document.getElementById(id);
+function parseCSV(t){
+  const rows=[];
+  t.replace(/^\uFEFF/,"").split(/\r?\n/).forEach(l=>{
+    if(!l.trim())return;
+    const c=[];let cur="",q=false;
+    for(const ch of l){if(ch=='"')q=!q;else if(ch==","&&!q){c.push(cur.trim());cur=""}else cur+=ch}
+    c.push(cur.trim());rows.push(c);
+  });
+  return rows.map(r=>({code:r[0],name:r[1],sector:r[2],cap:parseFloat((r[3]||"").replace(/,/g,"")),chg:parseFloat((r[4]||"").replace(/[,%+]/g,""))}))
+    .filter(r=>r.code&&r.sector&&isFinite(r.cap)&&isFinite(r.chg));
+}
+function load(text,label){
+  const d=parseCSV(text);
+  if(!d.length){alert("讀不到有效資料,請確認欄位順序與格式");return}
+  DATA=d;
+  try{localStorage.setItem(KEY,JSON.stringify({d,label,t:new Date().toLocaleString("zh-TW")}))}catch(e){}
+  $("meta").textContent=`${label}・共 ${d.length} 檔・${new Set(d.map(x=>x.sector)).size} 個族群`;
+  $("imp").open=false;render();
+}
+const fmtC=n=>n>=10000?(n/10000).toFixed(2)+" 兆":n.toLocaleString("zh-TW",{maximumFractionDigits:0})+" 億";
+const cls=v=>v>0?"up":v<0?"dn":"";
+const fmtP=v=>(v>0?"+":"")+v.toFixed(2)+"%";
+function render(){
+  const g={};
+  DATA.forEach(r=>(g[r.sector]??=[]).push(r));
+  let secs=Object.entries(g).map(([s,a])=>{
+    a.sort((x,y)=>y.cap-x.cap);
+    const tot=a.reduce((p,c)=>p+c.cap,0);
+    const avg=a.reduce((p,c)=>p+c.chg,0)/a.length;
+    return{s,a,tot,avg};
+  });
+  const m=$("ss").value;
+  secs.sort((x,y)=>m=="chg"?y.avg-x.avg:m=="cap"?y.tot-x.tot:x.s.localeCompare(y.s,"zh-Hant"));
+  const h=secs.map(({s,a,tot,avg})=>{
+    const rows=a.map((r,i)=>({r,i}));
+    if(!rows.length)return"";
+    const body=rows.map(({r,i})=>`<tr class="${i==0?"boss":""}"><td>${i+1}</td><td>${esc(r.code)}</td><td>${esc(r.name)}${i==0?'<span class="badge">大哥</span>':""}</td><td>${fmtC(r.cap)}</td><td class="${cls(r.chg)}">${fmtP(r.chg)}</td></tr>`).join("");
+    return`<section class="sec"><div class="sh"><span>${esc(s)} <span class="sub">${a.length} 檔・${fmtC(tot)}</span></span><span class="${cls(avg)}">平均 ${fmtP(avg)}</span></div><div class="scroll"><table><tr><th>排名</th><th>代號</th><th>名稱</th><th>市值</th><th>漲跌幅</th></tr>${body}</table></div></section>`;
+  }).join("");
+  $("out").innerHTML=h||'<div class="empty">沒有符合的資料</div>';
+}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+$("go").onclick=()=>load($("ta").value,"貼上資料");
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>load(r.result,f.name);r.readAsText(f,"utf-8")};
+$("demo").onclick=()=>load(`甲001,示意A公司,示意族群一,5000,1.2
+甲002,示意B公司,示意族群一,1200,-0.8
+甲003,示意C公司,示意族群一,300,2.5
+乙001,示意D公司,示意族群二,800,-1.1
+乙002,示意E公司,示意族群二,2600,0.4`,"示意資料(虛構,非真實行情)");
+$("ss").onchange=render;
+
+try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.d){DATA=s.d;$("meta").textContent=`${s.label}・上次載入 ${s.t}・共 ${s.d.length} 檔`;$("imp").open=false;render()}}catch(e){}
+
+if(typeof EMBED!=="undefined")load(EMBED.csv,"證交所收盤資料・"+EMBED.date);
+else if(!DATA.length){$("meta").textContent="尚未產生資料,請執行 build.py,或手動匯入";$("imp").open=true}
+</script>
+</body>
+</html>
